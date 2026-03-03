@@ -1,0 +1,62 @@
+1️⃣ What Is a “Header Mismatch”?
+
+An HTTP request has:
+
+Method (POST)
+
+URL
+
+Body
+
+Headers
+
+Headers are metadata like:
+
+Content-Type: application/json
+User-Agent: PostmanRuntime/7.36.0
+Accept: */*
+x-api-key: hb_xxxxx
+
+Your Lambda originally sent only:
+
+Content-Type: application/json
+x-api-key: hb_xxxxx
+User-Agent: Python-urllib/3.x   (automatic)
+
+Postman sent MORE headers.
+
+That difference is the mismatch.
+
+2️⃣ What Was The Exact Mismatch In Your Case?
+
+The important difference was:
+
+🔴 User-Agent
+
+Lambda default:
+
+Python-urllib/3.9
+
+Postman:
+
+PostmanRuntime/7.36.0
+
+Cloudflare treats these differently.
+
+Why?
+
+Because:
+
+Python-urllib → Common bot signature
+
+PostmanRuntime → Recognized API testing client
+
+So even though:
+
+API key same
+
+Body same
+
+The server saw two different “clients”.
+
+That triggered 403.

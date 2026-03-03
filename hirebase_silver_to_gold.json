@@ -1,0 +1,282 @@
+{
+	"jobConfig": {
+		"name": "hirebase_silver_to_gold",
+		"description": "",
+		"role": "arn:aws:iam::451075103928:role/JobMarketGlueRole",
+		"command": "glueetl",
+		"version": "5.0",
+		"runtime": null,
+		"workerType": "G.1X",
+		"numberOfWorkers": "5",
+		"maxCapacity": 5,
+		"jobRunQueuingEnabled": false,
+		"maxRetries": 0,
+		"timeout": 480,
+		"maxConcurrentRuns": 1,
+		"security": "none",
+		"scriptName": "hirebase_silver_to_gold.py",
+		"scriptLocation": "s3://aws-glue-assets-451075103928-us-east-1/scripts/",
+		"language": "python-3",
+		"spark": false,
+		"jobParameters": [],
+		"tags": [],
+		"jobMode": "NOTEBOOK_MODE",
+		"createdOn": "2026-02-20T11:03:18.243Z",
+		"developerMode": false,
+		"connectionsList": [],
+		"temporaryDirectory": "s3://aws-glue-assets-451075103928-us-east-1/temporary/",
+		"glueHiveMetastore": true,
+		"etlAutoTuning": false,
+		"pythonShellPrebuiltLibraryOption": "analytics",
+		"flexExecution": false,
+		"minFlexWorkers": null,
+		"maintenanceWindow": null,
+		"bookmark": "",
+		"metrics": "",
+		"observabilityMetrics": "",
+		"logging": "",
+		"sparkPath": "",
+		"serverEncryption": false,
+		"pythonPath": null,
+		"dependentPath": "",
+		"referencedPath": "",
+		"etlAutoScaling": false,
+		"etlAutoTuningJobRules": "",
+		"pythonVersion": ""
+	},
+	"hasBeenSaved": false,
+	"usageProfileName": null,
+	"script": "from pyspark.sql.functions import *\nfrom pyspark.sql.types import *\nfrom pyspark.sql import SparkSession\nfrom datetime import datetime\nfrom zoneinfo import ZoneInfo\nfrom awsglue.context import GlueContext\nfrom awsglue.job import Job\nimport pyspark.sql.functions as F\nsc = SparkContext()\nglueContext = GlueContext(sc)\nspark = glueContext.spark_session\n\njob = Job(glueContext)\njob.init(\"silverToGoldJob\", {})\n# #manual reading file\n# input_path = \"s3://job-market-tracker-hsg/silver/year=2026/month=02/day=20/part-00000-aa1f3e27-8161-4e00-9593-83537474b6fe.c000.snappy.parquet\"\n# df = spark.read.parquet(input_path)\n# dynamic file reading\ntoday = datetime.now()\nday = today.strftime(\"%d\")\nmonth = today.strftime(\"%m\")\nyear = today.strftime(\"%Y\")\n\n# Dynamic folder path\ninput_path = f\"s3://job-market-tracker-hsg/silver/year={year}/month={month}/day={day}/\"\n\n# Read all parquet files in that folder\ndf = spark.read.parquet(input_path + \"*.parquet\")\ndf.show(3)\ndf = df.withColumn(\n    'job_title',\n    lower(col('job_title'))\n)\ndf.select('job_title').show()\ndf = df.withColumn(\n        'technology_text',\n        lower(concat_ws(\" \", col(\"technologies\")))\n)\n# 1️⃣ Standardize Job Roles\n\ndf = df.withColumn(\n    \"standardized_role\",\n    \n    # Data Engineer logic\n    when(\n        col(\"job_title\").contains(\"data engineer\") |\n        col(\"technology_text\").rlike(\"spark|airflow|etl|kafka|hadoop|databricks\"),\n        \"Data Engineer\"\n    )\n    \n    # Data Scientist logic\n    .when(\n        col(\"job_title\").contains(\"data scien\") |\n        col(\"technology_text\").rlike(\"machine learning|ml|tensorflow|pytorch|scikit\"),\n        \"Data Scientist\"\n    )\n    \n    # Data Analyst logic\n    .when(\n        col(\"job_title\").contains(\"data analyst\") |\n        col(\"technology_text\").rlike(\"power bi|tableau|excel|sql\"),\n        \"Data Analyst\"\n    )\n    \n    .otherwise(\"Other\")\n)\ndf.select('job_title', 'standardized_role').show()\n# 2️⃣ Role Demand (Overall)\n\ndf_role_demand = df.groupBy(\"standardized_role\").agg(\n    count(\"*\").alias(\"job_count\")\n)\n\ndf_role_demand.write.mode(\"overwrite\").parquet(\n    \"s3://job-market-tracker-hsg/gold/role_demand/\"\n)\n# 3️⃣ Role Trend (Over Time)\n\ndf_role_trend = df.groupBy(\n    \"standardized_role\",\n    F.year(\"date_posted\").alias(\"year\")\n).agg(\n    count(\"*\").alias(\"job_count\")\n)\n\ndf_role_trend.write.mode(\"overwrite\").parquet(\n    \"s3://job-market-tracker-hsg/gold/role_trend/\"\n)\n# 4️⃣ Role Demand by Location\n\ndf_role_location = df.groupBy(\n    \"standardized_role\",\n    \"location_city\"\n).agg(\n    count(\"*\").alias(\"job_count\")\n)\n\ndf_role_location.write.mode(\"overwrite\").parquet(\n    \"s3://job-market-tracker-hsg/gold/role_location_demand/\"\n)\n# 5️⃣ Top Skills by Role\n\ndf_skills = df.withColumn(\n    \"skill\", explode(col(\"technologies\"))\n)\n\ndf_top_skills = df_skills.groupBy(\n    \"standardized_role\",\n    \"skill\"\n).agg(\n    count(\"*\").alias(\"demand_count\")\n)\n\ndf_top_skills.write.mode(\"overwrite\").parquet(\n    \"s3://job-market-tracker-hsg/gold/top_skills_by_role/\"\n)\njob.commit()",
+	"notebook": {
+		"metadata": {
+			"kernelspec": {
+				"name": "glue_pyspark",
+				"display_name": "Glue PySpark",
+				"language": "python"
+			},
+			"language_info": {
+				"name": "Python_Glue_Session",
+				"mimetype": "text/x-python",
+				"codemirror_mode": {
+					"name": "python",
+					"version": 3
+				},
+				"pygments_lexer": "python3",
+				"file_extension": ".py"
+			}
+		},
+		"nbformat_minor": 4,
+		"nbformat": 4,
+		"cells": [
+			{
+				"cell_type": "code",
+				"source": "from pyspark.sql.functions import *\nfrom pyspark.sql.types import *\nfrom pyspark.sql import SparkSession\nfrom datetime import datetime\nfrom zoneinfo import ZoneInfo\nfrom awsglue.context import GlueContext\nfrom awsglue.job import Job\nimport pyspark.sql.functions as F",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 18,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "sc = SparkContext()\nglueContext = GlueContext(sc)\nspark = glueContext.spark_session\n\njob = Job(glueContext)\njob.init(\"silverToGoldJob\", {})",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 5,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "# #manual reading file\n# input_path = \"s3://job-market-tracker-hsg/silver/year=2026/month=02/day=20/part-00000-aa1f3e27-8161-4e00-9593-83537474b6fe.c000.snappy.parquet\"\n# df = spark.read.parquet(input_path)",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 1,
+				"outputs": []
+			},
+			{
+				"cell_type": "code",
+				"source": "# dynamic file reading\ntoday = datetime.now()\nday = today.strftime(\"%d\")\nmonth = today.strftime(\"%m\")\nyear = today.strftime(\"%Y\")\n\n# Dynamic folder path\ninput_path = f\"s3://job-market-tracker-hsg/silver/year={year}/month={month}/day={day}/\"\n\n# Read all parquet files in that folder\ndf = spark.read.parquet(input_path + \"*.parquet\")\ndf.show(3)",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 7,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "+--------------------+------------------+--------------------+---------+-------------+-----------+-------+-------+-------------+---------------+----------------+--------------------+--------------------+--------------------+\n|              job_id|      company_name|           job_title| job_type|location_type|date_posted|min_yoe|max_yoe|location_city|location_region|location_country|        technologies|              skills|         description|\n+--------------------+------------------+--------------------+---------+-------------+-----------+-------+-------+-------------+---------------+----------------+--------------------+--------------------+--------------------+\n|69021bd29d82fdc49...|            Photon|Software Engineer...|Full Time|    In-Person| 2025-10-29|      6|      9|      Chennai|     Tamil Nadu|           India|[SQL, Oracle, Pos...|[SQL, Data Modeli...|<p>This Software ...|\n|69025d2d0bf9eaa2d...|NTT DATA  Services|       Data Engineer|Full Time|    In-Person| 2025-10-29|      7|      7|       Mumbai|    Maharashtra|           India|[Azure, Snowflake...|[Data Solutions, ...|<p>NTT DATA is se...|\n|69031e9854edc6116...|         Roku Inc.|Senior Software E...|Full Time|       Hybrid| 2025-10-30|      7|      7|    Bengaluru|      Karnataka|           India|[Java, Akka, Java...|[Backend developm...|<p>Roku is seekin...|\n+--------------------+------------------+--------------------+---------+-------------+-----------+-------+-------+-------------+---------------+----------------+--------------------+--------------------+--------------------+\nonly showing top 3 rows\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "df = df.withColumn(\n    'job_title',\n    lower(col('job_title'))\n)\ndf.select('job_title').show()",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 10,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "+--------------------+\n|           job_title|\n+--------------------+\n|software engineer...|\n|       data engineer|\n|senior software e...|\n| senior data analyst|\n|senior - celonis ...|\n|      data scientist|\n|software engineer...|\n|quantexa data eng...|\n|sr. data science ...|\n|       data engineer|\n+--------------------+\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "df = df.withColumn(\n        'technology_text',\n        lower(concat_ws(\" \", col(\"technologies\")))\n)",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 12,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "# 1️⃣ Standardize Job Roles\n\ndf = df.withColumn(\n    \"standardized_role\",\n    \n    # Data Engineer logic\n    when(\n        col(\"job_title\").contains(\"data engineer\") |\n        col(\"technology_text\").rlike(\"spark|airflow|etl|kafka|hadoop|databricks\"),\n        \"Data Engineer\"\n    )\n    \n    # Data Scientist logic\n    .when(\n        col(\"job_title\").contains(\"data scien\") |\n        col(\"technology_text\").rlike(\"machine learning|ml|tensorflow|pytorch|scikit\"),\n        \"Data Scientist\"\n    )\n    \n    # Data Analyst logic\n    .when(\n        col(\"job_title\").contains(\"data analyst\") |\n        col(\"technology_text\").rlike(\"power bi|tableau|excel|sql\"),\n        \"Data Analyst\"\n    )\n    \n    .otherwise(\"Other\")\n)",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 14,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "df.select('job_title', 'standardized_role').show()",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 15,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "+--------------------+-----------------+\n|           job_title|standardized_role|\n+--------------------+-----------------+\n|software engineer...|     Data Analyst|\n|       data engineer|    Data Engineer|\n|senior software e...|    Data Engineer|\n| senior data analyst|     Data Analyst|\n|senior - celonis ...|    Data Engineer|\n|      data scientist|   Data Scientist|\n|software engineer...|    Data Engineer|\n|quantexa data eng...|    Data Engineer|\n|sr. data science ...|   Data Scientist|\n|       data engineer|    Data Engineer|\n+--------------------+-----------------+\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "# 2️⃣ Role Demand (Overall)\n\ndf_role_demand = df.groupBy(\"standardized_role\").agg(\n    count(\"*\").alias(\"job_count\")\n)\n\ndf_role_demand.write.mode(\"overwrite\").parquet(\n    \"s3://job-market-tracker-hsg/gold/role_demand/\"\n)",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 16,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "# 3️⃣ Role Trend (Over Time)\n\ndf_role_trend = df.groupBy(\n    \"standardized_role\",\n    F.year(\"date_posted\").alias(\"year\")\n).agg(\n    count(\"*\").alias(\"job_count\")\n)\n\ndf_role_trend.write.mode(\"overwrite\").parquet(\n    \"s3://job-market-tracker-hsg/gold/role_trend/\"\n)",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 19,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "# 4️⃣ Role Demand by Location\n\ndf_role_location = df.groupBy(\n    \"standardized_role\",\n    \"location_city\"\n).agg(\n    count(\"*\").alias(\"job_count\")\n)\n\ndf_role_location.write.mode(\"overwrite\").parquet(\n    \"s3://job-market-tracker-hsg/gold/role_location_demand/\"\n)",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 20,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "# 5️⃣ Top Skills by Role\n\ndf_skills = df.withColumn(\n    \"skill\", explode(col(\"technologies\"))\n)\n\ndf_top_skills = df_skills.groupBy(\n    \"standardized_role\",\n    \"skill\"\n).agg(\n    count(\"*\").alias(\"demand_count\")\n)\n\ndf_top_skills.write.mode(\"overwrite\").parquet(\n    \"s3://job-market-tracker-hsg/gold/top_skills_by_role/\"\n)",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 21,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "job.commit()",
+				"metadata": {
+					"trusted": true,
+					"tags": []
+				},
+				"execution_count": 22,
+				"outputs": [
+					{
+						"name": "stdout",
+						"text": "\n",
+						"output_type": "stream"
+					}
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": "",
+				"metadata": {},
+				"execution_count": null,
+				"outputs": []
+			}
+		]
+	}
+}
