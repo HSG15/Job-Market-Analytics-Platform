@@ -8,6 +8,8 @@ The pipeline collects job market data from an external API, processes it using A
 
 # 📌 Project Architecture
 
+<img width="1061" height="516" alt="image" src="https://github.com/user-attachments/assets/2f9c93b5-163a-4d4f-b4a3-9b67da3fc879" />
+
 **Flow:**
 
 API (Hirebase / Adzuna)  
