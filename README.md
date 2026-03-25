@@ -8,7 +8,9 @@ The pipeline collects job market data from an external API, processes it using A
 
 # 📌 Project Architecture
 
-<img width="1061" height="516" alt="image" src="https://github.com/user-attachments/assets/2f9c93b5-163a-4d4f-b4a3-9b67da3fc879" />
+
+<img width="1508" height="704" alt="ProjectArchitecture" src="https://github.com/user-attachments/assets/d42632bc-764f-44a7-be2b-ee3d7e83ee6a" />
+
 
 **Flow:**
 
@@ -49,25 +51,25 @@ API (Hirebase / Adzuna)
 ## 🥈 Silver Layer (Cleaned Data)
 - Reads raw JSON from Bronze
 - Cleans and standardizes:
-- job_title
-- company
-- location
-- salary
-- skills
-- Removes duplicates
-- Converts to **Parquet format**
-- Partitioned by date
+  - job_title
+  - company
+  - location
+  - salary
+  - skills
+  - Removes duplicates
+  - Converts to **Parquet format**
+  - Partitioned by date
 
 ---
 
 ## 🥇 Gold Layer (Analytics-Ready Data)
 - Aggregated datasets for reporting:
-- Role-wise job demand
-- Location-wise job postings
-- Top skills demand
-- Role vs Skills mapping
-- Stored in optimized Parquet format
-- Ready for SQL queries and dashboards
+  - Role-wise job demand
+  - Location-wise job postings
+  - Top skills demand
+  - Role vs Skills mapping
+  - Stored in optimized Parquet format
+  - Ready for SQL queries and dashboards
 
 ---
 
